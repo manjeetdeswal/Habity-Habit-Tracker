@@ -48,6 +48,11 @@ jobs:
         run: |
           flutter config --enable-linux-desktop
           flutter build linux --release
+          # NEW: Copy our installer and icon into the final bundle folder
+          cp linux/install.sh build/linux/x64/release/bundle/
+          cp linux/icon.png build/linux/x64/release/bundle/
+          # Make the installer executable by default
+          chmod +x build/linux/x64/release/bundle/install.sh
 
       - name: Upload Linux App
         uses: actions/upload-artifact@v4

@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "fitdy" "\0"
+            VALUE "CompanyName", "com.jeet_studio" "\0"
+            VALUE "FileDescription", "Habity" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "fitdy" "\0"
+            VALUE "InternalName", "Habity" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "fitdy.exe" "\0"
-            VALUE "ProductName", "fitdy" "\0"
+            VALUE "OriginalFilename", "Habity.exe" "\0"
+            VALUE "ProductName", "Habity" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
