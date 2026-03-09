@@ -86,14 +86,10 @@ Right click → **Open** → **Open anyway**
 Download **habity-linux.zip** and run:
 
 ``` bash
-cd ~/Downloads/habity-linux
-chmod +x habity
-./habity
+./install.sh
 ```
 
-If using an older build:
 
-    ./fitdy
 
 ------------------------------------------------------------------------
 
