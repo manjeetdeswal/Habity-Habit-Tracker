@@ -10,18 +10,22 @@ jobs:
   build_macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+
       - name: Install dependencies
         run: flutter pub get
+
       - name: Build macOS
         run: |
           flutter config --enable-macos-desktop
           flutter build macos --release
+
       - name: Upload macOS App
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: habity-macos
           path: build/macos/Build/Products/Release/
@@ -29,20 +33,24 @@ jobs:
   build_linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+
       - name: Install Linux Build Dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y libgtk-3-dev libblkid-dev liblzma-dev libgcrypt20-dev
+
       - name: Build Linux
         run: |
           flutter config --enable-linux-desktop
           flutter build linux --release
+
       - name: Upload Linux App
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: habity-linux
           path: build/linux/x64/release/bundle/
