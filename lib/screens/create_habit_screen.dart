@@ -1,9 +1,10 @@
-import'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'dart:math';
+
 import '../services/habitDatabase.dart';
 import '../services/notification_service.dart';
 import '../models/habit.dart';
-import 'dart:math';
 
 class CreateHabitScreen extends StatefulWidget {
   final Habit? existingHabit;
@@ -30,6 +31,10 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
   String _streakGoalInterval = 'Daily';
   bool _allowExceeding = false;
   List<int> _reminderDays = [1, 2, 3, 4, 5, 6, 7];
+
+  // NEW: Daily Schedule Time Blocks
+  TimeOfDay? _scheduledStartTime;
+  TimeOfDay? _scheduledEndTime;
 
   final List<String> _availableCategories = ['Art', 'Finances', 'Fitness', 'Health', 'Nutrition', 'Social', 'Study', 'Work', 'Other', 'Morning', 'Day', 'Evening'];
   final List<String> _weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -65,13 +70,21 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
       _allowExceeding = h.allowExceeding;
       _reminderDays = h.reminderDays.toList();
 
-      if (h.reminderTimes != null && h.reminderTimes.isNotEmpty) {
+      if (h.reminderTimes.isNotEmpty) {
         _reminderTimes = h.reminderTimes.map((dt) => TimeOfDay(hour: dt.hour, minute: dt.minute)).toList();
       } else {
         _reminderTimes = [];
       }
-    } else {
 
+      // NEW: Load existing schedule times
+      if (h.scheduledStartTime != null) {
+        _scheduledStartTime = TimeOfDay(hour: h.scheduledStartTime!.hour, minute: h.scheduledStartTime!.minute);
+      }
+      if (h.scheduledEndTime != null) {
+        _scheduledEndTime = TimeOfDay(hour: h.scheduledEndTime!.hour, minute: h.scheduledEndTime!.minute);
+      }
+
+    } else {
       final random = Random();
       _selectedColor = _colors[random.nextInt(_colors.length)];
       _selectedIcon = _icons[random.nextInt(_icons.length)];
@@ -79,7 +92,6 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
   }
 
   void _saveHabit() {
-
     if (_nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -91,63 +103,73 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
       return;
     }
 
-    if (_nameController.text.isNotEmpty) {
+    final now = DateTime.now();
+    List<DateTime> dbTimes = _reminderTimes.map((t) =>
+        DateTime(now.year, now.month, now.day, t.hour, t.minute)
+    ).toList();
 
+    // NEW: Convert TimeOfDay to DateTime for Hive
+    DateTime? finalStartTime;
+    DateTime? finalEndTime;
 
-
-      final now = DateTime.now();
-      List<DateTime> dbTimes = _reminderTimes.map((t) =>
-          DateTime(now.year, now.month, now.day, t.hour, t.minute)
-      ).toList();
-
-      int currentHabitKey;
-
-      if (widget.existingHabit != null) {
-        // UPDATE EXISTING HABIT
-        widget.existingHabit!.name = _nameController.text;
-        widget.existingHabit!.description = _descController.text;
-        widget.existingHabit!.colorValue = _selectedColor;
-        widget.existingHabit!.iconCodePoint = _selectedIcon.codePoint;
-        widget.existingHabit!.completionsPerDay = _completionsPerDay;
-        widget.existingHabit!.reminderTimes = dbTimes; // <-- Uses the new List property
-        widget.existingHabit!.categories = _selectedCategories;
-        widget.existingHabit!.streakGoalInterval = _streakGoalInterval;
-        widget.existingHabit!.allowExceeding = _allowExceeding;
-        widget.existingHabit!.reminderDays = _reminderDays;
-        widget.existingHabit!.save();
-
-        currentHabitKey = widget.existingHabit!.key;
-      } else {
-        // ADD NEW HABIT
-        db.addCustomHabit(
-          name: _nameController.text,
-          description: _descController.text,
-          colorValue: _selectedColor,
-          iconCodePoint: _selectedIcon.codePoint,
-          completionsPerDay: _completionsPerDay,
-          reminderTimes: dbTimes, // <-- Uses the new List property
-          categories: _selectedCategories,
-          streakGoalInterval: _streakGoalInterval,
-          allowExceeding: _allowExceeding,
-          reminderDays: _reminderDays,
-        );
-
-        // Fetch the newly added habit to get its unique database key for notifications
-        final box = Hive.box<Habit>('habitsBox');
-        currentHabitKey = box.values.last.key;
-      }
-
-      // 2. Schedule or Cancel the notifications safely!
-      if (_reminderTimes.isNotEmpty) {
-        // Passes the entire list of times to the notification engine
-        NotificationService.scheduleHabitReminder(currentHabitKey, _nameController.text, _reminderTimes, _reminderDays);
-      } else {
-        // If the list is empty, cancel all alarms for this habit
-        NotificationService.cancelHabitReminder(currentHabitKey);
-      }
-
-      Navigator.pop(context);
+    if (_scheduledStartTime != null) {
+      finalStartTime = DateTime(now.year, now.month, now.day, _scheduledStartTime!.hour, _scheduledStartTime!.minute);
     }
+    if (_scheduledEndTime != null) {
+      finalEndTime = DateTime(now.year, now.month, now.day, _scheduledEndTime!.hour, _scheduledEndTime!.minute);
+    }
+
+    int currentHabitKey;
+
+    if (widget.existingHabit != null) {
+      // UPDATE EXISTING HABIT
+      widget.existingHabit!.name = _nameController.text;
+      widget.existingHabit!.description = _descController.text;
+      widget.existingHabit!.colorValue = _selectedColor;
+      widget.existingHabit!.iconCodePoint = _selectedIcon.codePoint;
+      widget.existingHabit!.completionsPerDay = _completionsPerDay;
+      widget.existingHabit!.reminderTimes = dbTimes;
+      widget.existingHabit!.categories = _selectedCategories;
+      widget.existingHabit!.streakGoalInterval = _streakGoalInterval;
+      widget.existingHabit!.allowExceeding = _allowExceeding;
+      widget.existingHabit!.reminderDays = _reminderDays;
+
+      // NEW: Save Schedule Times
+      widget.existingHabit!.scheduledStartTime = finalStartTime;
+      widget.existingHabit!.scheduledEndTime = finalEndTime;
+
+      widget.existingHabit!.save();
+
+      currentHabitKey = widget.existingHabit!.key;
+    } else {
+      // ADD NEW HABIT
+      db.addCustomHabit(
+        name: _nameController.text,
+        description: _descController.text,
+        colorValue: _selectedColor,
+        iconCodePoint: _selectedIcon.codePoint,
+        completionsPerDay: _completionsPerDay,
+        reminderTimes: dbTimes,
+        categories: _selectedCategories,
+        streakGoalInterval: _streakGoalInterval,
+        allowExceeding: _allowExceeding,
+        reminderDays: _reminderDays,
+        // NEW: Pass Schedule Times
+        scheduledStartTime: finalStartTime,
+        scheduledEndTime: finalEndTime,
+      );
+
+      final box = Hive.box<Habit>('habitsBox');
+      currentHabitKey = box.values.last.key;
+    }
+
+    if (_reminderTimes.isNotEmpty) {
+      NotificationService.scheduleHabitReminder(currentHabitKey, _nameController.text, _reminderTimes, _reminderDays);
+    } else {
+      NotificationService.cancelHabitReminder(currentHabitKey);
+    }
+
+    Navigator.pop(context);
   }
 
   void _showStreakGoalSheet(Color cardColor, Color textColor) {
@@ -190,19 +212,13 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
           return StatefulBuilder(
               builder: (context, setModalState) {
                 return Padding(
-                  // Pushes the bottom sheet up when the keyboard opens
-                  padding: EdgeInsets.only(
-                      bottom: MediaQuery.of(context).viewInsets.bottom,
-                      left: 20, right: 20, top: 20
-                  ),
+                  padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 20, right: 20, top: 20),
                   child: Column(
-                    mainAxisSize: MainAxisSize.min, // Takes only necessary height
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Categories', style: TextStyle(color: textColor, fontSize: 20, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 10),
-
-                      // Custom Category Text Field
                       TextField(
                         controller: customCategoryController,
                         style: TextStyle(color: textColor),
@@ -215,12 +231,8 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
                               if (customCategoryController.text.trim().isNotEmpty) {
                                 setModalState(() {
                                   String newCat = customCategoryController.text.trim();
-                                  if (!_availableCategories.contains(newCat)) {
-                                    _availableCategories.add(newCat);
-                                  }
-                                  if (!_selectedCategories.contains(newCat)) {
-                                    _selectedCategories.add(newCat);
-                                  }
+                                  if (!_availableCategories.contains(newCat)) _availableCategories.add(newCat);
+                                  if (!_selectedCategories.contains(newCat)) _selectedCategories.add(newCat);
                                 });
                                 setState(() {});
                                 customCategoryController.clear();
@@ -232,8 +244,6 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
                         ),
                       ),
                       const SizedBox(height: 20),
-
-                      // List of available categories
                       ConstrainedBox(
                         constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.35),
                         child: SingleChildScrollView(
@@ -259,8 +269,6 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
                         ),
                       ),
                       const SizedBox(height: 20),
-
-                      // Save & Close Button
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
@@ -307,7 +315,7 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
     showModalBottomSheet(
         context: context,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        isScrollControlled: true, // Needed so the list can grow
+        isScrollControlled: true,
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
         builder: (context) {
           return StatefulBuilder(
@@ -343,8 +351,6 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
                               }),
                             ),
                             const SizedBox(height: 20),
-
-                            // Dynamically generate rows for every time added
                             ..._reminderTimes.map((time) {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
@@ -374,8 +380,6 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
                                 ),
                               );
                             }),
-
-                            // Add Time Button
                             GestureDetector(
                                 onTap: () async {
                                   final picked = await showTimePicker(context: context, initialTime: TimeOfDay.now());
@@ -417,6 +421,45 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
     );
   }
 
+  // NEW: Helper widget to build the Time Picker buttons cleanly
+  Widget _buildTimePickerBox(String title, TimeOfDay? time, Color cardColor, Color textColor, bool isStart) {
+    return GestureDetector(
+      onTap: () async {
+        final picked = await showTimePicker(context: context, initialTime: time ?? TimeOfDay.now());
+        if (picked != null) {
+          setState(() {
+            if (isStart) _scheduledStartTime = picked;
+            else _scheduledEndTime = picked;
+          });
+        }
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLabel(title, true),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: time != null ? const Color(0xFF673AB7).withOpacity(0.2) : cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: time != null ? Border.all(color: const Color(0xFF673AB7)) : null,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  time != null ? time.format(context) : 'Not Set',
+                  style: TextStyle(color: time != null ? const Color(0xFF673AB7) : Colors.grey, fontWeight: FontWeight.bold),
+                ),
+                Icon(Icons.schedule, color: time != null ? const Color(0xFF673AB7) : Colors.grey, size: 20),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -455,7 +498,7 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
             SizedBox(
               width: double.infinity,
               child: Wrap(
-                  alignment: WrapAlignment.center, // Centered!
+                  alignment: WrapAlignment.center,
                   spacing: 15, runSpacing: 15, children: _icons.map((icon) {
                 final isSelected = _selectedIcon == icon;
                 return GestureDetector(
@@ -474,7 +517,7 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
             SizedBox(
               width: double.infinity,
               child: Wrap(
-                  alignment: WrapAlignment.center, // Centered!
+                  alignment: WrapAlignment.center,
                   spacing: 15, runSpacing: 15, children: _colors.map((colorHex) {
                 final isSelected = _selectedColor == colorHex;
                 return GestureDetector(
@@ -500,6 +543,17 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
             const Divider(color: Colors.white12, height: 30),
 
             if (_showAdvanced) ...[
+
+              // NEW: Daily Schedule Time Blocks Added Here
+              Row(
+                children: [
+                  Expanded(child: _buildTimePickerBox('Schedule Start', _scheduledStartTime, cardColor, textColor, true)),
+                  const SizedBox(width: 15),
+                  Expanded(child: _buildTimePickerBox('Schedule End', _scheduledEndTime, cardColor, textColor, false)),
+                ],
+              ),
+              const SizedBox(height: 20),
+
               Row(
                 children: [
                   Expanded(child: _buildSettingTile('Streak Goal', _streakGoalInterval, cardColor, textColor, onTap: () => _showStreakGoalSheet(cardColor, textColor))),
@@ -514,9 +568,11 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
                           textColor,
                           onTap: () => _showReminderSheet(cardColor, textColor)
                       )
-                  ),                ],
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
+
               _buildSettingTile('Categories', _selectedCategories.isEmpty ? 'None' : _selectedCategories.join(', '), cardColor, textColor, onTap: () => _showCategoriesSheet(cardColor, textColor)),
               const SizedBox(height: 20),
 
@@ -574,6 +630,7 @@ class _CreateHabitScreenState extends State<CreateHabitScreen> {
 
   Widget _buildLabel(String text, bool isDark) => Padding(padding: const EdgeInsets.only(bottom: 8.0), child: Text(text, style: TextStyle(color: isDark ? Colors.grey.shade400 : Colors.grey.shade700, fontSize: 14)));
   Widget _buildTextField(TextEditingController controller, String hint, Color fill, Color text) => TextField(controller: controller, style: TextStyle(color: text), decoration: InputDecoration(hintText: hint, hintStyle: TextStyle(color: Colors.grey.shade500), filled: true, fillColor: fill, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)));
+
   Widget _buildSettingTile(String label, String value, Color fill, Color text, {VoidCallback? onTap}) {
     return GestureDetector(
       onTap: onTap,

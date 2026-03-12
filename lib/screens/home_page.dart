@@ -5,19 +5,25 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../models/habit.dart';
-import '../services/habitDatabase.dart';
-import 'create_habit_screen.dart';
-import 'global_reminders_screen.dart';
-import '../services/notification_service.dart';
-import 'settings_screen.dart';
-import 'statistics_screen.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'package:home_widget/home_widget.dart';
+
+import '../models/habit.dart';
+import '../services/habitDatabase.dart';
+import '../services/notification_service.dart';
+
+import 'create_habit_screen.dart';
+import 'global_reminders_screen.dart';
+import 'note_editor_screen.dart';
+import 'settings_screen.dart';
+import 'statistics_screen.dart';
+import '../screens/DailyScheduleScreen.dart';
+import 'todo_screen.dart';
+import 'notes_screen.dart';
+import 'focus_screen.dart';
+
 class HomePage extends StatefulWidget {
-
   const HomePage({super.key});
-
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -25,18 +31,19 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final HabitDatabase db = HabitDatabase();
-
-  final _settingsBox = Hive.box('settingsBox'); // Access settings database
+  final _settingsBox = Hive.box('settingsBox');
 
   late int _viewMode;
   late int _daysToShow;
+
+  // NEW: Track the active tab for the Bottom Navigation Bar
+  int _currentIndex = 0;
 
   @override
   void initState() {
     super.initState();
 
     _viewMode = _settingsBox.get('viewMode', defaultValue: 1);
-
     int savedDays = _getSavedDurationForView(_viewMode);
 
     HomeWidget.widgetClicked.listen(_handleWidgetClick);
@@ -49,15 +56,11 @@ class _HomePageState extends State<HomePage> {
     _daysToShow = savedDays;
   }
 
-
   void _handleWidgetClick(Uri? uri) {
     if (uri == null) return;
-
-    // If the widget is asking to be configured
     if (uri.host == 'configure') {
       int widgetId = int.parse(uri.queryParameters['widgetId'] ?? '-1');
       if (widgetId != -1) {
-        // Wait a tiny bit for the UI to build, then show the bottom sheet
         Future.delayed(const Duration(milliseconds: 300), () {
           _showWidgetConfigurationSheet(widgetId);
         });
@@ -65,8 +68,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-
-  // Pop up a list of habits to link to the widget
   void _showWidgetConfigurationSheet(int widgetId) {
     final habits = Hive.box<Habit>('habitsBox').values.toList();
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -84,16 +85,12 @@ class _HomePageState extends State<HomePage> {
                 const Text('Select a Habit', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 15),
                 ...habits.map((habit) => ListTile(
-                  leading: Icon(IconData(habit.iconCodePoint, fontFamily: 'MaterialIcons'), color: Color(habit.colorValue)),
-                  title: Text(habit.name),
+                    leading: Icon(IconData(habit.iconCodePoint, fontFamily: 'MaterialIcons'), color: Color(habit.colorValue)),
+                    title: Text(habit.name),
                     onTap: () async {
-
                       await HomeWidget.saveWidgetData<int>('widget_${widgetId}_id', habit.key);
                       await HomeWidget.saveWidgetData<String>('widget_${widgetId}_name', habit.name);
-
-                          await HabitDatabase.syncWidgetState(habit);
-
-
+                      await HabitDatabase.syncWidgetState(habit);
                       if (mounted) Navigator.pop(context);
                     }
                 ))
@@ -104,33 +101,23 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  //  REORDER LOGIC ---
   void _onReorder(int oldIndex, int newIndex, List<Habit> currentHabits) {
     setState(() {
-      if (newIndex > oldIndex) {
-        newIndex -= 1;
-      }
+      if (newIndex > oldIndex) newIndex -= 1;
       final Habit item = currentHabits.removeAt(oldIndex);
       currentHabits.insert(newIndex, item);
-
-      // Save the new custom order of keys to Hive!
       List<int> newOrder = currentHabits.map((h) => h.key as int).toList();
       _settingsBox.put('habitOrder', newOrder);
     });
   }
 
-  // --- DRAG ANIMATION EFFECT ---
   Widget _dragDecorator(Widget child, int index, Animation<double> animation) {
     return AnimatedBuilder(
       animation: animation,
       builder: (BuildContext context, Widget? child) {
-        // Creates a smooth easing curve
         final double animValue = Curves.easeInOut.transform(animation.value);
-        // Scales the card up by 5% when picked up
         final double scale = 1.0 + (0.05 * animValue);
-
         final double elevation = 12.0 * animValue;
-
         return Transform.scale(
           scale: scale,
           child: Material(
@@ -146,20 +133,21 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-
   int _getSavedDurationForView(int mode) {
-    if (mode == 0) return _settingsBox.get('gridDays', defaultValue: 21); // Grid default
-    if (mode == 2) return _settingsBox.get('compactDays', defaultValue: 5); // Compact default
-    return _settingsBox.get('listDays', defaultValue: 60); // List default
+    if (mode == 0) return _settingsBox.get('gridDays', defaultValue: 21);
+    if (mode == 2) return _settingsBox.get('compactDays', defaultValue: 5);
+    return _settingsBox.get('listDays', defaultValue: 60);
   }
+
   void _saveViewSettings(int mode, int days) {
     _settingsBox.put('viewMode', mode);
     if (mode == 0) _settingsBox.put('gridDays', days);
     else if (mode == 2) _settingsBox.put('compactDays', days);
     else _settingsBox.put('listDays', days);
   }
+
   void _showHabitDetails(BuildContext context, Habit habit, Color habitColor, Color textColor, Color cardColor, bool isDark) {
-    DateTime focusedDay = DateTime.now(); // NEW: Track the focused month
+    DateTime focusedDay = DateTime.now();
 
     showModalBottomSheet(
       context: context,
@@ -167,7 +155,6 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: isDark ? const Color(0xFF121421) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) {
-        // NEW: StatefulBuilder allows the bottom sheet to update its UI instantly!
         return StatefulBuilder(
             builder: (context, setModalState) {
               return Container(
@@ -178,9 +165,8 @@ class _HomePageState extends State<HomePage> {
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.start, // Keeps it pinned to the top
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Expanded ensures the title stops growing before hitting the close button
                         Expanded(
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -195,7 +181,7 @@ class _HomePageState extends State<HomePage> {
                                       habit.name,
                                       style: TextStyle(color: textColor, fontSize: 22, fontWeight: FontWeight.bold),
                                       maxLines: 2,
-                                      overflow: TextOverflow.ellipsis, // Adds "..." if the name is massive
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                     if (habit.description.isNotEmpty)
                                       Text(
@@ -210,7 +196,6 @@ class _HomePageState extends State<HomePage> {
                             ],
                           ),
                         ),
-
                         IconButton(
                             padding: EdgeInsets.zero,
                             alignment: Alignment.topRight,
@@ -220,7 +205,6 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                     const SizedBox(height: 20),
-
                     Row(
                       children: [
                         Expanded(
@@ -255,14 +239,11 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                     const SizedBox(height: 30),
-
                     TableCalendar(
                       firstDay: DateTime.utc(2020, 10, 16),
                       lastDay: DateTime.utc(2030, 3, 14),
                       focusedDay: focusedDay,
                       daysOfWeekHeight: 32.0,
-
-                      // FIX 1: Make dates editable
                       onDaySelected: (selectedDay, newFocusedDay) {
                         final allowPast = Hive.box('settingsBox').get('allowPastEdits', defaultValue: true);
                         final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
@@ -273,15 +254,10 @@ class _HomePageState extends State<HomePage> {
                           return;
                         }
 
-                        // Check using .any() to avoid timezone bugs
                         bool isDone = habit.completedDays.any((d) => d.year == selectedDay.year && d.month == selectedDay.month && d.day == selectedDay.day);
                         db.toggleHabitForDate(habit, selectedDay, !isDone);
-
-                        setModalState(() {
-                          focusedDay = newFocusedDay;
-                        });
+                        setModalState(() { focusedDay = newFocusedDay; });
                       },
-
                       headerStyle: HeaderStyle(
                         formatButtonVisible: false, titleCentered: true, titleTextStyle: TextStyle(color: textColor, fontSize: 16),
                         leftChevronIcon: Icon(Icons.chevron_left, color: textColor), rightChevronIcon: Icon(Icons.chevron_right, color: textColor),
@@ -292,8 +268,6 @@ class _HomePageState extends State<HomePage> {
                         todayDecoration: BoxDecoration(color: habitColor.withOpacity(0.3), shape: BoxShape.circle),
                         todayTextStyle: TextStyle(color: habitColor, fontWeight: FontWeight.bold),
                       ),
-
-                      // FIX 2: Draw colors safely
                       calendarBuilders: CalendarBuilders(
                         defaultBuilder: (context, day, focusedDay) {
                           bool isDone = habit.completedDays.any((d) => d.year == day.year && d.month == day.month && d.day == day.day);
@@ -330,13 +304,11 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --- BUILDER: COMPACT WEEK VIEW ---
   Widget _buildCompactHabitRow(Habit habit, Color habitColor, Color cardColor, Color textColor, bool isDark, List<DateTime> dates) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Row(
         children: [
-          // Left: Habit Name Pill
           Expanded(
             flex: 2,
             child: GestureDetector(
@@ -355,7 +327,6 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           const SizedBox(width: 12),
-          // Right: Interactive Day Boxes
           Expanded(
             flex: 3,
             child: Row(
@@ -363,7 +334,6 @@ class _HomePageState extends State<HomePage> {
                 bool isDone = habit.completedDays.contains(date);
                 return Expanded(
                   child: GestureDetector(
-                    // UPDATED: Check settings before allowing the tap
                     onTap: () {
                       final allowPast = Hive.box('settingsBox').get('allowPastEdits', defaultValue: true);
                       final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
@@ -393,8 +363,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --- BUILDER: GRID OR LIST VIEW ---
-  // --- BUILDER: GRID OR LIST VIEW ---
   Widget _buildStandardHabitCard(Habit habit, bool isDoneToday, Color habitColor, Color cardColor, Color textColor, bool isDark, Map<DateTime, int> dataset) {
     bool isGrid = _viewMode == 0;
     return Dismissible(
@@ -407,36 +375,32 @@ class _HomePageState extends State<HomePage> {
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       onDismissed: (direction) {
-        // 1. Clone all the habit's data into memory BEFORE deleting it!
         final String name = habit.name;
         final String desc = habit.description;
         final int colorValue = habit.colorValue;
         final int iconCodePoint = habit.iconCodePoint;
         final List<DateTime> completedDays = habit.completedDays.toList();
         final int completionsPerDay = habit.completionsPerDay;
-        final List<DateTime> reminderTimes = habit.reminderTimes?.toList() ?? [];
+        final List<DateTime> reminderTimes = habit.reminderTimes.toList();
         final List<String> categories = habit.categories.toList();
         final String streakGoalInterval = habit.streakGoalInterval;
         final bool allowExceeding = habit.allowExceeding;
         final List<int> reminderDays = habit.reminderDays.toList();
         final int oldKey = habit.key;
 
-        // 2. Cancel its alarms and delete it from the database
         NotificationService.cancelHabitReminder(oldKey);
         db.deleteHabit(habit);
 
-        // 3. Show the 5-second SnackBar with the Undo button
-        ScaffoldMessenger.of(context).clearSnackBars(); // Clears any existing popups first
+        ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Deleted "$name"'),
-            duration: const Duration(seconds: 5), // Stays on screen for exactly 5 seconds
-            behavior: SnackBarBehavior.floating, // Makes it look like a nice floating pill
+            duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
             action: SnackBarAction(
               label: 'Undo',
-              textColor: const Color(0xFF673AB7), // Purple accent to match your app
+              textColor: const Color(0xFF673AB7),
               onPressed: () {
-                // 4. RESTORE LOGIC: If they click Undo, rebuild the habit!
                 final restoredHabit = Habit(
                   name: name,
                   description: desc,
@@ -451,10 +415,8 @@ class _HomePageState extends State<HomePage> {
                   reminderDays: reminderDays,
                 );
 
-                // Put it back in the database (it will get a brand new Hive key)
                 Hive.box<Habit>('habitsBox').add(restoredHabit);
 
-                // Re-arm all of its notifications using its new database key!
                 if (reminderTimes.isNotEmpty) {
                   final List<TimeOfDay> timesOfDay = reminderTimes.map((dt) => TimeOfDay(hour: dt.hour, minute: dt.minute)).toList();
                   NotificationService.scheduleHabitReminder(restoredHabit.key, restoredHabit.name, timesOfDay, reminderDays);
@@ -507,16 +469,12 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
               const SizedBox(height: 16),
-
-              // --- THE FINAL FIX FOR CLIPPED TEXT ---
               Builder(
                   builder: (context) {
                     Widget heatMapWidget = FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
-                      clipBehavior: Clip.none, // Stops FittedBox from cutting corners
-
-                      // Padding is INSIDE the FittedBox so it forces the bounding box to expand leftward
+                      clipBehavior: Clip.none,
                       child: Padding(
                         padding: const EdgeInsets.only(left: 45.0, right: 20.0, top: 12.0, bottom: 12.0),
                         child: HeatMap(
@@ -525,7 +483,7 @@ class _HomePageState extends State<HomePage> {
                           showText: false,
                           scrollable: false,
                           size: isGrid ? 20 : 16,
-                          fontSize: 12, // Shrunk to 12 so the package doesn't chop its own letters
+                          fontSize: 12,
                           showColorTip: !isGrid,
                           margin: const EdgeInsets.all(3),
                           startDate: DateTime.now().subtract(Duration(days: _daysToShow)),
@@ -536,12 +494,9 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                     );
-
                     return isGrid ? Expanded(child: heatMapWidget) : heatMapWidget;
                   }
               ),
-              // --------------------------------------
-
             ],
           ),
         ),
@@ -549,8 +504,47 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> _launchDonationURL() async {
+  // NEW: The Today's Progress widget logic
+  Widget _buildTodayProgress(List<Habit> habits, Color textColor, Color cardColor) {
+    if (habits.isEmpty) return const SizedBox.shrink();
 
+    final now = DateTime.now();
+    int completedCount = habits.where((h) {
+      return h.completedDays.any((d) => d.year == now.year && d.month == now.month && d.day == now.day);
+    }).length;
+
+    double progress = completedCount / habits.length;
+
+    return Container(
+      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 10, top: 5),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text("Today's Progress", style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold)),
+              Text("$completedCount / ${habits.length}", style: const TextStyle(color: Color(0xFF673AB7), fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 10,
+              backgroundColor: Colors.grey.withOpacity(0.2),
+              color: const Color(0xFF673AB7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _launchDonationURL() async {
     final Uri url = Uri.parse('https://www.patreon.com/cw/UnrealComponent');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (mounted) {
@@ -561,9 +555,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-
-
-  // Generates the date options based on current view
   List<DropdownMenuItem<int>> _getDropdownItems() {
     if (_viewMode == 0) {
       return const [
@@ -597,19 +588,15 @@ class _HomePageState extends State<HomePage> {
     final textColor = isDark ? Colors.white : Colors.black87;
     final cardColor = Theme.of(context).cardColor;
 
-    // Calculate dates for Compact View header
     List<DateTime> compactDates = [];
     DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     for (int i = _daysToShow - 1; i >= 0; i--) compactDates.add(today.subtract(Duration(days: i)));
 
     return Scaffold(
       appBar: AppBar(
-
         leading: IconButton(
           icon: Icon(Icons.bar_chart_rounded, color: textColor, size: 28),
-          onPressed: () {
-            Navigator.push(context, MaterialPageRoute(builder: (context) => const StatisticsScreen()));
-          },
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const StatisticsScreen())),
         ),
         title: Text('Habity', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)),
         centerTitle: true,
@@ -623,215 +610,258 @@ class _HomePageState extends State<HomePage> {
           IconButton(icon: Icon(Icons.settings, color: textColor), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen())))
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF673AB7), foregroundColor: Colors.white,
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateHabitScreen())),
-        child: const Icon(Icons.add),
+
+      // NEW: Bottom Navigation Bar to swap between List and Schedule
+      bottomNavigationBar: ValueListenableBuilder<bool>(
+        valueListenable: isFocusFullscreen, // This comes from focus_screen.dart
+        builder: (context, isFullscreen, child) {
+          if (isFullscreen) return const SizedBox.shrink(); // Hides the bar!
+
+          return BottomNavigationBar(
+            currentIndex: _currentIndex,
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: isDark ? const Color(0xFF121421) : Colors.white,
+            selectedItemColor: const Color(0xFF673AB7),
+            unselectedItemColor: Colors.grey.shade500,
+            showUnselectedLabels: false,
+            elevation: 10,
+            onTap: (index) => setState(() => _currentIndex = index),
+            items: const [
+              BottomNavigationBarItem(icon: Icon(Icons.task_alt_rounded), label: 'Habits'),
+              BottomNavigationBarItem(icon: Icon(Icons.calendar_view_day_rounded), label: 'Schedule'),
+              BottomNavigationBarItem(icon: Icon(Icons.checklist_rtl_rounded), label: 'To-Do'),
+              BottomNavigationBarItem(icon: Icon(Icons.sticky_note_2_rounded), label: 'Notes'),
+              BottomNavigationBarItem(icon: Icon(Icons.hourglass_bottom_rounded), label: 'Focus'),
+            ],
+          );
+        },
       ),
-      body: Column(
+
+      // NEW: Only show Floating Action Button when on the Habits Tab
+      floatingActionButton: (_currentIndex == 0 || _currentIndex == 2 || _currentIndex == 3)
+          ? FloatingActionButton(
+        backgroundColor: const Color(0xFF673AB7), foregroundColor: Colors.white,
+        onPressed: () {
+          if (_currentIndex == 0) {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateHabitScreen()));
+          } else if (_currentIndex == 2) {
+            TodoScreenState.showTaskSheet(context);
+          } else if (_currentIndex == 3) {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const NoteEditorScreen()));
+          }
+        },
+        child: const Icon(Icons.add),
+      )
+          : null,
+
+      // NEW: Indexed Stack lets you switch tabs instantly without losing state
+      body: IndexedStack(
+        index: _currentIndex,
         children: [
-          // --- CONTROLS ROW ---
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: DropdownButton<int>(
-                    value: _daysToShow,
-                    dropdownColor: cardColor,
-                    style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 14),
-                    underline: const SizedBox(),
-                    isExpanded: true, // Prevents long text from causing right-side overflow!
-                    icon: Icon(Icons.keyboard_arrow_down, color: textColor, size: 20),
-                    items: _getDropdownItems(),
-                    onChanged: (val) {
-                      setState(() {
-                        _daysToShow = val!;
-                        _saveViewSettings(_viewMode, _daysToShow);
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 10),
 
-                // UPDATED: FittedBox scales the button down slightly if it runs out of room!
-                SegmentedButton<int>(
-                  style: SegmentedButton.styleFrom(
-                    backgroundColor: isDark ? Colors.transparent : Colors.white,
-                    selectedBackgroundColor: const Color(0xFF673AB7).withOpacity(0.2),
-                    padding: const EdgeInsets.symmetric(horizontal: 8), // Keeps it compact
-                  ),
-                  segments: const [
-                    ButtonSegment(value: 0, icon: Icon(Icons.grid_view_rounded, size: 18)),
-                    ButtonSegment(value: 1, icon: Icon(Icons.view_list_rounded, size: 18)),
-                    ButtonSegment(value: 2, icon: Icon(Icons.view_week_rounded, size: 18)),
+          // TAB 0: Your existing Column holding the Habits View
+          Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: DropdownButton<int>(
+                        value: _daysToShow,
+                        dropdownColor: cardColor,
+                        style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 14),
+                        underline: const SizedBox(),
+                        isExpanded: true,
+                        icon: Icon(Icons.keyboard_arrow_down, color: textColor, size: 20),
+                        items: _getDropdownItems(),
+                        onChanged: (val) {
+                          setState(() {
+                            _daysToShow = val!;
+                            _saveViewSettings(_viewMode, _daysToShow);
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    SegmentedButton<int>(
+                      style: SegmentedButton.styleFrom(
+                        backgroundColor: isDark ? Colors.transparent : Colors.white,
+                        selectedBackgroundColor: const Color(0xFF673AB7).withOpacity(0.2),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      segments: const [
+                        ButtonSegment(value: 0, icon: Icon(Icons.grid_view_rounded, size: 18)),
+                        ButtonSegment(value: 1, icon: Icon(Icons.view_list_rounded, size: 18)),
+                        ButtonSegment(value: 2, icon: Icon(Icons.view_week_rounded, size: 18)),
+                      ],
+                      selected: {_viewMode},
+                      onSelectionChanged: (Set<int> newSelection) {
+                        setState(() {
+                          _viewMode = newSelection.first;
+                          int savedDays = _getSavedDurationForView(_viewMode);
+                          if (_viewMode == 0 && ![7, 14, 21, 30, 60].contains(savedDays)) savedDays = 30;
+                          if (_viewMode == 2 && ![5, 7, 14].contains(savedDays)) savedDays = 7;
+                          if (_viewMode == 1 && ![30, 60, 90, 180, 365, 540].contains(savedDays)) savedDays = 60;
+                          _daysToShow = savedDays;
+                          _saveViewSettings(_viewMode, _daysToShow);
+                        });
+                      },
+                    ),
                   ],
-                  selected: {_viewMode},
-                  onSelectionChanged: (Set<int> newSelection) {
-                    setState(() {
-                      _viewMode = newSelection.first;
-                      int savedDays = _getSavedDurationForView(_viewMode);
-
-                      // UPDATED: Added 60 to the Grid view safety check!
-                      if (_viewMode == 0 && ![7, 14, 21, 30, 60].contains(savedDays)) savedDays = 30;
-                      if (_viewMode == 2 && ![5, 7, 14].contains(savedDays)) savedDays = 7;
-                      if (_viewMode == 1 && ![30, 60, 90, 180, 365, 540].contains(savedDays)) savedDays = 60;
-                      _daysToShow = savedDays;
-                      _saveViewSettings(_viewMode, _daysToShow);
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-
-          // --- HEADER FOR COMPACT VIEW ONLY ---
-          if (_viewMode == 2)
-            Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 800), // PC Fix: Keeps compact mode centered and readable
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 4),
-                  child: Row(
-                    children: [
-                      const Expanded(flex: 2, child: SizedBox()), // Empty space over habit names
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 3,
-                        child: Row(
-                          children: compactDates.map((d) => Expanded(
-                            child: Column(
-                              children: [
-                                Text(DateFormat('E').format(d).substring(0,2), style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
-                                Text('${d.day}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textColor)),
-                              ],
-                            ),
-                          )).toList(),
-                        ),
-                      )
-                    ],
-                  ),
                 ),
               ),
-            ),
 
-          // --- HABITS LIST ---
-
-          Expanded(
-            child: ValueListenableBuilder<Box<Habit>>(
-              valueListenable: Hive.box<Habit>('habitsBox').listenable(),
-              builder: (context, box, _) {
-                if (box.values.isEmpty) {
-                  return Center(child: Text('No habits yet. Add one!', style: TextStyle(color: textColor)));
-                }
-
-                List<Habit> habits = box.values.toList();
-                final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
-
-                // Sort the habits based on your custom dragged order!
-                List<int> savedOrder = (_settingsBox.get('habitOrder', defaultValue: <int>[]) as List).cast<int>();
-                habits.sort((a, b) {
-                  int indexA = savedOrder.indexOf(a.key);
-                  int indexB = savedOrder.indexOf(b.key);
-                  if (indexA == -1 && indexB == -1) return 0;
-                  if (indexA == -1) return 1;
-                  if (indexB == -1) return -1;
-                  return indexA.compareTo(indexB);
-                });
-
-
-                // 0: GRID VIEW
-                // 0: GRID VIEW
-                if (_viewMode == 0) {
-                  return ReorderableGridView.builder(
-                    padding: const EdgeInsets.only(bottom: 80, left: 16, right: 16),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: MediaQuery.of(context).size.width > 1400 ? 5 : (MediaQuery.of(context).size.width > 1000 ? 4 : (MediaQuery.of(context).size.width > 700 ? 3 : 2)),
-                      mainAxisExtent: 280,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                    ),
-                    itemCount: habits.length,
-                    onReorder: (oldIndex, newIndex) => _onReorder(oldIndex, newIndex, habits),
-
-                    // --- NEW: Grid Drag Animation! ---
-                    dragWidgetBuilder: (index, child) {
-                      return Material(
-                        elevation: 12.0, // Adds the deep shadow
-                        color: Colors.transparent,
-                        shadowColor: Colors.black54,
-                        borderRadius: BorderRadius.circular(16),
-                        child: Transform.scale(
-                          scale: 1.05, // Pops the card up 5% larger
-                          child: child,
-                        ),
-                      );
-                    },
-                    // ---------------------------------
-
-                    itemBuilder: (context, index) {
-                      final habit = habits[index];
-                      final isDoneToday = habit.completedDays.contains(today);
-                      Map<DateTime, int> dataset = { for (var date in habit.completedDays) DateTime(date.year, date.month, date.day): 1 };
-
-                      return ReorderableDelayedDragStartListener(
-                        index: index,
-                        key: Key('grid_${habit.key}'),
-                        child: _buildStandardHabitCard(habit, isDoneToday, Color(habit.colorValue), cardColor, textColor, isDark, dataset),
-                      );
-                    },
-                  );
-                }
-
-                // 2: COMPACT WEEK VIEW
-                if (_viewMode == 2) {
-                  return ReorderableListView.builder(
-                    proxyDecorator: _dragDecorator, // <-- ADDED HERE!
-                    buildDefaultDragHandles: false,
-                    padding: const EdgeInsets.only(bottom: 80),
-                    itemCount: habits.length,
-                    onReorder: (oldIndex, newIndex) => _onReorder(oldIndex, newIndex, habits),
-                    itemBuilder: (context, index) {
-                      final habit = habits[index];
-                      return ReorderableDelayedDragStartListener(
-                        index: index,
-                        key: Key('compact_${habit.key}'),
-                        child: _buildCompactHabitRow(habit, Color(habit.colorValue), cardColor, textColor, isDark, compactDates),
-                      );
-                    },
-                  );
-                }
-
-                // 1: REGULAR LIST VIEW
-                return Align(
+              if (_viewMode == 2)
+                Align(
                   alignment: Alignment.topCenter,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 800),
-                    child: ReorderableListView.builder(
-                      proxyDecorator: _dragDecorator, // <-- ADDED HERE!
-                      buildDefaultDragHandles: false,
-                      padding: const EdgeInsets.only(bottom: 80),
-                      itemCount: habits.length,
-                      onReorder: (oldIndex, newIndex) => _onReorder(oldIndex, newIndex, habits),
-                      itemBuilder: (context, index) {
-                        final habit = habits[index];
-                        final isDoneToday = habit.completedDays.contains(today);
-                        Map<DateTime, int> dataset = { for (var date in habit.completedDays) DateTime(date.year, date.month, date.day): 1 };
-
-                        return ReorderableDelayedDragStartListener(
-                          index: index,
-                          key: Key('list_${habit.key}'),
-                          child: _buildStandardHabitCard(habit, isDoneToday, Color(habit.colorValue), cardColor, textColor, isDark, dataset),
-                        );
-                      },
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 4),
+                      child: Row(
+                        children: [
+                          const Expanded(flex: 2, child: SizedBox()),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 3,
+                            child: Row(
+                              children: compactDates.map((d) => Expanded(
+                                child: Column(
+                                  children: [
+                                    Text(DateFormat('E').format(d).substring(0,2), style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                                    Text('${d.day}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textColor)),
+                                  ],
+                                ),
+                              )).toList(),
+                            ),
+                          )
+                        ],
+                      ),
                     ),
                   ),
-                );
-              },
-            ),
+                ),
+
+              Expanded(
+                child: ValueListenableBuilder<Box<Habit>>(
+                  valueListenable: Hive.box<Habit>('habitsBox').listenable(),
+                  builder: (context, box, _) {
+                    if (box.values.isEmpty) {
+                      return Center(child: Text('No habits yet. Add one!', style: TextStyle(color: textColor)));
+                    }
+
+                    List<Habit> habits = box.values.toList();
+                    List<int> savedOrder = (_settingsBox.get('habitOrder', defaultValue: <int>[]) as List).cast<int>();
+                    habits.sort((a, b) {
+                      int indexA = savedOrder.indexOf(a.key);
+                      int indexB = savedOrder.indexOf(b.key);
+                      if (indexA == -1 && indexB == -1) return 0;
+                      if (indexA == -1) return 1;
+                      if (indexB == -1) return -1;
+                      return indexA.compareTo(indexB);
+                    });
+
+                    // NEW: Insert the Daily Progress Tracker right here!
+                    return Column(
+                      children: [
+                        _buildTodayProgress(habits, textColor, cardColor),
+
+                        Expanded(
+                          child: Builder(
+                              builder: (context) {
+                                if (_viewMode == 0) {
+                                  return ReorderableGridView.builder(
+                                    padding: const EdgeInsets.only(bottom: 80, left: 16, right: 16),
+                                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: MediaQuery.of(context).size.width > 1400 ? 5 : (MediaQuery.of(context).size.width > 1000 ? 4 : (MediaQuery.of(context).size.width > 700 ? 3 : 2)),
+                                      mainAxisExtent: 280,
+                                      crossAxisSpacing: 12,
+                                      mainAxisSpacing: 12,
+                                    ),
+                                    itemCount: habits.length,
+                                    onReorder: (oldIndex, newIndex) => _onReorder(oldIndex, newIndex, habits),
+                                    dragWidgetBuilder: (index, child) {
+                                      return Material(
+                                        elevation: 12.0,
+                                        color: Colors.transparent,
+                                        shadowColor: Colors.black54,
+                                        borderRadius: BorderRadius.circular(16),
+                                        child: Transform.scale(scale: 1.05, child: child),
+                                      );
+                                    },
+                                    itemBuilder: (context, index) {
+                                      final habit = habits[index];
+                                      final isDoneToday = habit.completedDays.contains(today);
+                                      Map<DateTime, int> dataset = { for (var date in habit.completedDays) DateTime(date.year, date.month, date.day): 1 };
+                                      return ReorderableDelayedDragStartListener(
+                                        index: index, key: Key('grid_${habit.key}'),
+                                        child: _buildStandardHabitCard(habit, isDoneToday, Color(habit.colorValue), cardColor, textColor, isDark, dataset),
+                                      );
+                                    },
+                                  );
+                                }
+
+                                if (_viewMode == 2) {
+                                  return ReorderableListView.builder(
+                                    proxyDecorator: _dragDecorator,
+                                    buildDefaultDragHandles: false,
+                                    padding: const EdgeInsets.only(bottom: 80),
+                                    itemCount: habits.length,
+                                    onReorder: (oldIndex, newIndex) => _onReorder(oldIndex, newIndex, habits),
+                                    itemBuilder: (context, index) {
+                                      final habit = habits[index];
+                                      return ReorderableDelayedDragStartListener(
+                                        index: index, key: Key('compact_${habit.key}'),
+                                        child: _buildCompactHabitRow(habit, Color(habit.colorValue), cardColor, textColor, isDark, compactDates),
+                                      );
+                                    },
+                                  );
+                                }
+
+                                return Align(
+                                  alignment: Alignment.topCenter,
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(maxWidth: 800),
+                                    child: ReorderableListView.builder(
+                                      proxyDecorator: _dragDecorator,
+                                      buildDefaultDragHandles: false,
+                                      padding: const EdgeInsets.only(bottom: 80),
+                                      itemCount: habits.length,
+                                      onReorder: (oldIndex, newIndex) => _onReorder(oldIndex, newIndex, habits),
+                                      itemBuilder: (context, index) {
+                                        final habit = habits[index];
+                                        final isDoneToday = habit.completedDays.contains(today);
+                                        Map<DateTime, int> dataset = { for (var date in habit.completedDays) DateTime(date.year, date.month, date.day): 1 };
+                                        return ReorderableDelayedDragStartListener(
+                                          index: index, key: Key('list_${habit.key}'),
+                                          child: _buildStandardHabitCard(habit, isDoneToday, Color(habit.colorValue), cardColor, textColor, isDark, dataset),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                );
+                              }
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
+
+          // TAB 1: The New Schedule View
+          const DailyScheduleScreen(),
+          // TAB 2: The To-Do View
+          const TodoScreen(),
+
+          // TAB 3: The Notes View
+          const NotesScreen(),
+
+          // TAB 4: The Focus Timer View
+          const FocusScreen(),
         ],
       ),
     );

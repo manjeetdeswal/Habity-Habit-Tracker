@@ -41,7 +41,11 @@ class Habit extends HiveObject {
   @HiveField(15, defaultValue: [1, 2, 3, 4, 5, 6, 7]) // 1=Mon, 7=Sun
   List<int> reminderDays;
 
+  @HiveField(16)
+  DateTime? scheduledStartTime;
 
+  @HiveField(17)
+  DateTime? scheduledEndTime;
 
 
   Habit({
@@ -61,6 +65,8 @@ class Habit extends HiveObject {
     this.streakGoalInterval = 'None',
     this.allowExceeding = false,
     this.reminderDays = const [1, 2, 3, 4, 5, 6, 7],
+    this.scheduledStartTime ,
+    this.scheduledEndTime ,
 
   });
 }

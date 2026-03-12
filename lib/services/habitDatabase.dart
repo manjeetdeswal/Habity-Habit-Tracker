@@ -120,7 +120,9 @@ class HabitDatabase {
     String streakGoalInterval = 'None',
     bool allowExceeding = false,
     List<int> reminderDays = const [1,2,3,4,5,6,7],
-    bool useIndividualGrid = false, // NEW
+    bool useIndividualGrid = false,
+    DateTime? scheduledStartTime,
+    DateTime? scheduledEndTime,
   }) {
     final newHabit = Habit(
       name: name,
@@ -134,6 +136,8 @@ class HabitDatabase {
       streakGoalInterval: streakGoalInterval,
       allowExceeding: allowExceeding,
       reminderDays: reminderDays,
+      scheduledStartTime: scheduledStartTime,
+      scheduledEndTime: scheduledEndTime
 
     );
     _myBox.add(newHabit);

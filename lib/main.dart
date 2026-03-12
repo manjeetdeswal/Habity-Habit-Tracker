@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:home_widget/home_widget.dart';
+import 'models/focus_session.dart';
+import 'models/note.dart';
+import 'models/todo.dart';
 import 'services/habitDatabase.dart';
 import 'models/habit.dart';
 import 'screens/home_page.dart';
@@ -58,9 +61,15 @@ void main() async {
 
 
   Hive.registerAdapter(HabitAdapter());
+  Hive.registerAdapter(TodoAdapter());
+  Hive.registerAdapter(NoteAdapter());
+  Hive.registerAdapter(FocusSessionAdapter());
 
 
   await Hive.openBox<Habit>('habitsBox');
+  await Hive.openBox<Todo>('todoBox');
+  await Hive.openBox<Note>('notesBox');
+  await Hive.openBox<FocusSession>('focusBox');
   await Hive.openBox('settingsBox');
 
   await NotificationService.init();
